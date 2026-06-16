@@ -66,7 +66,7 @@ constexpr uint8_t PWM_RES = 8;        // Resolución PWM — 8 bits (0-255)
 
 constexpr int PWM_MAX = 182;     // Límite absoluto de PWM para proteger los motores Faulhaber
 constexpr int VEL_AVANCE = 120;  // Potencia de ataque directo a la pelota
-constexpr int VEL_GIRO = 85;     // Potencia de rotación sobre el eje propio
+constexpr int VEL_GIRO = 85;     // Potencia máxima de rotación sobre el eje propio
 constexpr int VEL_BUSCAR = 80;   // Potencia durante el patrón de búsqueda
 constexpr int RAMPA_PASO = 4;    // Incremento/decremento de PWM por ciclo de loop (aceleración suave)
 
@@ -77,6 +77,14 @@ constexpr unsigned long T_CONFIRMA_MS = 500;  // Tiempo mínimo de señal contin
 // ============================================================
 
 constexpr int DIST_FRENADO_CM = 20;   // Distancia a la portería para ejecutar frenado brusco (cm)
+
+// ============================================================
+//  CONTROL DE GIRO EN REGRESANDO (portería)
+// ============================================================
+
+constexpr float K_GIRO = 1.5f;               // Ganancia proporcional para el giro (velocidad = K * error)
+constexpr int GIRO_MIN_PWM = 30;             // Velocidad mínima de giro para vencer la fricción
+constexpr unsigned long T_GIRO_TIMEOUT = 3000; // Tiempo máximo girando sin alinear (ms)
 
 // ============================================================
 //  VARIABLES MUTABLES (definidas en config.cpp)
