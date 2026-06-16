@@ -32,7 +32,7 @@ String debugInfo = "Iniciando...\n";   // Cadena que se mostrará en la página 
  * @brief Manejador de la raíz del servidor web: envía la información de debug como texto plano.
  */
 void handleRoot() {
-  server.send(200, "text/plain", debugInfo);
+    server.send(200, "text/plain", debugInfo);
 }
 
 /* ===================== CEREBRO UART (PROTOCOLO BINARIO) =========================== */
