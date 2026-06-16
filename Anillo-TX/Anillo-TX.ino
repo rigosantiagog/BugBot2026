@@ -54,7 +54,7 @@ void loop() {
   int idx = 0;
 
   // 1. Ángulo (float, 4 bytes, little-endian)
-  memcpy(&data[idx], &angulo, sizeof(float));
+  memcpy(&data[idx], (const void*)&angulo, sizeof(float));
   idx += 4;
 
   // 2. Estado (uint8_t)
@@ -68,10 +68,10 @@ void loop() {
   uint16_t b = (uint16_t)distAtras;
   uint16_t l = (uint16_t)distIzq;
   uint16_t r = (uint16_t)distDer;
-  memcpy(&data[idx], &f, sizeof(uint16_t)); idx += 2;
-  memcpy(&data[idx], &b, sizeof(uint16_t)); idx += 2;
-  memcpy(&data[idx], &l, sizeof(uint16_t)); idx += 2;
-  memcpy(&data[idx], &r, sizeof(uint16_t)); idx += 2;
+  memcpy(&data[idx], (const void*) &f, sizeof(uint16_t)); idx += 2;
+  memcpy(&data[idx], (const void*) &b, sizeof(uint16_t)); idx += 2;
+  memcpy(&data[idx], (const void*) &l, sizeof(uint16_t)); idx += 2;
+  memcpy(&data[idx], (const void*) &r, sizeof(uint16_t)); idx += 2;
 
   // 5. Mapa de bits de sensores (uint16_t)
   memcpy(&data[idx], &bitmapIR, sizeof(uint16_t)); idx += 2; // Debe ser 16
@@ -89,8 +89,14 @@ void loop() {
   Enlace.write(checksum);    // Checksum
 
   // Debug local (monitor serie)
-  Serial.printf("TX Bin -> A:%.1f C:%d N:%d RADAR[F:%d B:%d L:%d R:%d] BMP:0x%04X\n",
+  Serial.printf("TX Bin -> A:%.1f C:%d N:%d RADAR[F:%d B:%d L:%d R:%d] BMP:0x%04X ",
                 angulo, estado, totalActivos, distFrente, distAtras, distIzq, distDer, bitmapIR);
+  Serial.print("[ ");
+  for ( int i = 0 ; i < 16 ; i++ ){
+    Serial.print(activo[i]);
+    Serial.print(" , ");
+  }
+  Serial.println(" ] ");
 
   delay(50);   // Frecuencia de 20 Hz
 }
