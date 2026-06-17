@@ -6,6 +6,8 @@
  * - Inicialización PWM.
  * - Control individual de ruedas.
  * - Movimientos combinados (avance, giro, detención suave y brusca).
+ * 
+ * Hardware: 2x TB6612FNG, 4x Motores DC con ruedas Mecanum.
  */
 
 #ifndef FUNC_MOTOR_H

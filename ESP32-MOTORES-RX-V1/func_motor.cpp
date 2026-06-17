@@ -4,6 +4,10 @@
  * 
  * Utiliza los pines y constantes definidos en config.h.
  * Los motores se controlan mediante el driver TB6612FNG.
+ * 
+ * El chasis es Mecanum: para avanzar, todas las ruedas giran hacia adelante.
+ * Para girar en sitio, las ruedas izquierdas giran hacia adelante y las derechas hacia atrás (o viceversa).
+ * La corrección (corr) se aplica sumando a un lado y restando al otro para hacer giros suaves.
  */
 
 #include "func_motor.h"
@@ -46,7 +50,7 @@ void rueda(int pwm, int in1, int in2, int v, bool inv) {
     digitalWrite(in1, LOW);
     digitalWrite(in2, HIGH);
     pwmWrite(pwm, -v);
-  } else {                                       // Detenido
+  } else {                                       // Detenido (ambos pines en LOW, PWM=0)
     digitalWrite(in1, LOW);
     digitalWrite(in2, LOW);
     pwmWrite(pwm, 0);
@@ -87,6 +91,7 @@ void detener() {
 /**
  * @brief Frenado brusco: detiene todas las ruedas inmediatamente.
  *        Pone velAvanceActual a 0 y escribe 0 en todas las ruedas.
+ *        Se usa para el remate a portería o paradas de emergencia.
  */
 void frenar() {
   velAvanceActual = 0;
