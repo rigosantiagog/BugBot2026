@@ -1,59 +1,60 @@
-/**
- * @file func_ultrasonicos.cpp
- * @brief Implementación de la lectura de ultrasonidos en una tarea de FreeRTOS.
- */
-
 #include "func_ultrasonicos.h"
 #include "config.h"
 #include <Arduino.h>
 
-/**
- * @brief Mide la distancia con un HC-SR04 usando timeout.
- * @return Distancia en cm, o 999 si no hay eco.
- */
-int medirDistancia(int pinTrig, int pinEcho) {
-  digitalWrite(pinTrig, LOW);
+static int histF[FILTRO_ULTRASONIDOS] = {0};
+static int histB[FILTRO_ULTRASONIDOS] = {0};
+static int histL[FILTRO_ULTRASONIDOS] = {0};
+static int histR[FILTRO_ULTRASONIDOS] = {0};
+
+int medirDistancia(int trig, int echo) {
+  digitalWrite(trig, LOW);
   delayMicroseconds(2);
-  digitalWrite(pinTrig, HIGH);
+  digitalWrite(trig, HIGH);
   delayMicroseconds(10);
-  digitalWrite(pinTrig, LOW);
-  
-  long duracion = pulseIn(pinEcho, HIGH, 15000); // Timeout 15 ms (~2.5 m)
+  digitalWrite(trig, LOW);
+  long duracion = pulseIn(echo, HIGH, 20000);
   if (duracion == 0) return 999;
   return duracion * 0.034 / 2;
 }
 
-/**
- * @brief Tarea de FreeRTOS que se ejecuta en el Núcleo 0.
- *        Lee los cuatro ultrasonidos secuencialmente cada 30 ms.
- */
-void TareaUltrasonicos(void * pvParameters) {
-  // Configura pines
+int filtrar(int hist[], int nueva) {
+  static int cont = 0;
+  hist[cont % FILTRO_ULTRASONIDOS] = nueva;
+  cont++;
+  long suma = 0;
+  int count = 0;
+  for (int i = 0; i < FILTRO_ULTRASONIDOS; i++) {
+    if (hist[i] != 999) {
+      suma += hist[i];
+      count++;
+    }
+  }
+  return (count == 0) ? 999 : suma / count;
+}
+
+void inicializarPinesUltrasonidos() {
   pinMode(TRIG_F, OUTPUT); pinMode(ECHO_F, INPUT);
   pinMode(TRIG_B, OUTPUT); pinMode(ECHO_B, INPUT);
   pinMode(TRIG_L, OUTPUT); pinMode(ECHO_L, INPUT);
   pinMode(TRIG_R, OUTPUT); pinMode(ECHO_R, INPUT);
+}
 
-  for(;;) {
-    distFrente = medirDistancia(TRIG_F, ECHO_F);
-    distAtras  = medirDistancia(TRIG_B, ECHO_B);
-    distIzq    = medirDistancia(TRIG_L, ECHO_L);
-    distDer    = medirDistancia(TRIG_R, ECHO_R);
+void TareaUltrasonicos(void * pvParameters) {
+  inicializarPinesUltrasonidos();
+  for (;;) {
+    int rawF = medirDistancia(TRIG_F, ECHO_F);
+    int rawB = medirDistancia(TRIG_B, ECHO_B);
+    int rawL = medirDistancia(TRIG_L, ECHO_L);
+    int rawR = medirDistancia(TRIG_R, ECHO_R);
+    distFrente = filtrar(histF, rawF);
+    distAtras  = filtrar(histB, rawB);
+    distIzq    = filtrar(histL, rawL);
+    distDer    = filtrar(histR, rawR);
     vTaskDelay(30 / portTICK_PERIOD_MS);
   }
 }
 
-/**
- * @brief Crea y lanza la tarea de ultrasonidos en el Núcleo 0.
- */
 void iniciarUltrasonicos() {
-  xTaskCreatePinnedToCore(
-    TareaUltrasonicos,
-    "Lectura_HCSR04",
-    2048,
-    NULL,
-    1,
-    NULL,
-    0     // Núcleo 0
-  );
+  xTaskCreatePinnedToCore(TareaUltrasonicos, "HCSR04", 2048, NULL, 1, NULL, 0);
 }

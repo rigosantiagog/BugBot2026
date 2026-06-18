@@ -1,8 +1,4 @@
-/**
- * @file func_anillo.h
- * @brief Declaraciones para el procesamiento del anillo IR.
- */
-
+// func_anillo.h
 #ifndef FUNC_ANILLO_H
 #define FUNC_ANILLO_H
 

@@ -1,8 +1,4 @@
-/**
- * @file func_anillo.cpp
- * @brief Implementación de la lógica del anillo IR: detección de cadena activa y cálculo de ángulo.
- */
-
+// func_anillo.cpp
 #include <math.h>
 #include <Arduino.h>
 #include "config.h"
@@ -57,7 +53,8 @@ void fotorreceptoresActivos(int& totalActivos){
   for (int i = 0; i < totalSensores; i++) {
     seleccionarCanal(i);
     delayMicroseconds(100);                    // Tiempo para estabilizar la señal
-    activo[i] = (digitalRead(pinSIG) == LOW);  // TSSP58038 da LOW cuando detecta
+    // El TSSP58038 entrega LOW cuando detecta la pelota (salida activa baja)
+    activo[i] = (digitalRead(pinSIG) == LOW);
     if (activo[i]) totalActivos++;
   }
 }

@@ -1,8 +1,4 @@
-/**
- * @file func_multiplexor.cpp
- * @brief Implementación de la selección de canal del multiplexor.
- */
-
+// func_multiplexor.cpp
 #include <Arduino.h>
 #include "config.h"
 
