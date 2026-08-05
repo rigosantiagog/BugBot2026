@@ -1,8 +1,4 @@
-/**
- * @file func_anillo.cpp
- * @brief Implementación de la lógica del anillo IR: detección de cadena activa y cálculo de ángulo.
- */
-
+// func_anillo.cpp
 #include <math.h>
 #include <Arduino.h>
 #include "config.h"
@@ -16,7 +12,6 @@ int ubicarPelota(){
   int mejorInicio = -1, mejorLargo = 0;
   int iniActual = -1, largoActual = 0;
 
-  // Recorre el anillo dos veces para considerar el cruce por 0
   for (int k = 0; k < totalSensores * 2; k++) {
     int i = k % totalSensores;
     if (activo[i]) {
@@ -30,10 +25,9 @@ int ubicarPelota(){
       largoActual = 0;
     }
   }
-  if (mejorLargo > totalSensores) mejorLargo = totalSensores; // Límite de seguridad
+  if (mejorLargo > totalSensores) mejorLargo = totalSensores;
 
-  angulo = -1.0;   // Por defecto sin ángulo
-
+  angulo = -1.0;
   if (mejorLargo > 0) {
     float sx = 0, sy = 0;
     for (int j = 0; j < mejorLargo; j++) {
@@ -48,16 +42,12 @@ int ubicarPelota(){
   return mejorLargo;
 }
 
-/**
- * @brief Lee los 16 sensores a través del multiplexor y actualiza el arreglo activo[].
- * @param totalActivos Referencia para devolver el número de sensores activos.
- */
 void fotorreceptoresActivos(int& totalActivos){
   totalActivos = 0;
   for (int i = 0; i < totalSensores; i++) {
     seleccionarCanal(i);
-    delayMicroseconds(100);                    // Tiempo para estabilizar la señal
-    activo[i] = (digitalRead(pinSIG) == LOW);  // TSSP58038 da LOW cuando detecta
+    delayMicroseconds(100);
+    activo[i] = (digitalRead(pinSIG) == LOW);
     if (activo[i]) totalActivos++;
   }
 }
