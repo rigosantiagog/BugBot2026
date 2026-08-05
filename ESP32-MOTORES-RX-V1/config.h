@@ -1,123 +1,116 @@
-/**
- * @file config.h
- * @brief Configuraciones globales, pines, constantes y declaración de variables externas para la ESP32 de motores.
- * 
- * Este archivo contiene todas las definiciones que son comunes a varios módulos:
- * - Pines de los motores (TB6612FNG).
- * - Parámetros de velocidad, tolerancias y tiempos.
- * - Variables compartidas (volátiles) para comunicación entre archivos.
- */
-
 #ifndef CONFIG_H
 #define CONFIG_H
 
 #include <Arduino.h>
+#include <WiFi.h>
+#include <WebServer.h>
 
 // ============================================================
 //  PARÁMETROS DE JUEGO
 // ============================================================
 
-constexpr float FRENTE_ANILLO = 0.0f;        // Ángulo del chasis que apunta al frente de ataque (grados)
-constexpr float TOL_APUNTADO = 40.0f;        // Tolerancia de encuadre antes de avanzar hacia la pelota (grados)
-constexpr unsigned long T_QUIETO_MS = 4000;  // Duración del bloqueo inicial para estabilizar el MPU (ms)
-constexpr int N_CAPTURA = 3;                 // Mínimo de sensores IR activos para confirmar posesión
-
-constexpr float YAW_PORTERIA = 0.0f;   // Rumbo de la portería rival según el norte calibrado (grados)
-constexpr float TOL_PORTERIA = 15.0f;  // Tolerancia de rumbo aceptable al avanzar a portería (grados)
+constexpr float FRENTE_ANILLO = 0.0f;          // Offset del anillo (0 si sensor 0 apunta al frente)
+constexpr float TOL_APUNTADO = 40.0f;          // Grados de tolerancia para considerar la pelota encuadrada
+constexpr unsigned long T_QUIETO_MS = 4000;    // Tiempo de espera post-calibración (ms)
+constexpr int N_CAPTURA = 4;                   // Mínimo de sensores IR activos para captura (aumentado de 3)
+constexpr float YAW_PORTERIA = 0.0f;           // Rumbo hacia la portería rival (grados, fijado en calibración)
+constexpr float TOL_PORTERIA = 15.0f;          // Tolerancia angular para considerar el robot alineado
 
 // ============================================================
-//  PINES DE CONTROL DE MOTORES (TB6612FNG)
+//  PINES DE CONTROL DE MOTORES (TB6612FNG x2)
 // ============================================================
 
-constexpr uint8_t STBY = 4;  // Habilitación global de los drivers (LOW = bloqueado)
+constexpr uint8_t STBY = 4;                    // Habilitación global (LOW = motores apagados)
+constexpr uint8_t FL_PWM = 25, FL_IN1 = 26, FL_IN2 = 27; // Motor frontal izquierdo
+constexpr uint8_t RL_PWM = 33, RL_IN1 = 32, RL_IN2 = 14; // Motor trasero izquierdo
+constexpr uint8_t FR_PWM = 13, FR_IN1 = 23, FR_IN2 = 2;  // Motor frontal derecho
+constexpr uint8_t RR_PWM = 19, RR_IN1 = 18, RR_IN2 = 5;  // Motor trasero derecho
 
-// Motor Frontal Izquierdo (FL)
-constexpr uint8_t FL_PWM = 25;  // Velocidad
-constexpr uint8_t FL_IN1 = 26;  // Dirección 1
-constexpr uint8_t FL_IN2 = 27;  // Dirección 2
+// Inversión de giro (true si la rueda gira al revés de lo esperado)
+constexpr bool INVERTIR_FL = false, INVERTIR_FR = false, INVERTIR_RL = false, INVERTIR_RR = true;
 
-// Motor Trasero Izquierdo (RL)
-constexpr uint8_t RL_PWM = 33;  // Velocidad
-constexpr uint8_t RL_IN1 = 32;  // Dirección 1
-constexpr uint8_t RL_IN2 = 14;  // Dirección 2
-
-// Motor Frontal Derecho (FR)
-constexpr uint8_t FR_PWM = 13;  // Velocidad
-constexpr uint8_t FR_IN1 = 23;  // Dirección 1
-constexpr uint8_t FR_IN2 = 2;   // Dirección 2
-
-// Motor Trasero Derecho (RR)
-constexpr uint8_t RR_PWM = 19;  // Velocidad
-constexpr uint8_t RR_IN1 = 18;  // Dirección 1
-constexpr uint8_t RR_IN2 = 5;   // Dirección 2
-
-// Inversión de giro para cada motor (true si el motor gira al revés de lo esperado)
-constexpr bool INVERTIR_FL = false;
-constexpr bool INVERTIR_FR = false;
-constexpr bool INVERTIR_RL = false;
-constexpr bool INVERTIR_RR = true;   // Ajustar según montaje físico
-
-constexpr uint32_t PWM_FREQ = 20000;  // Frecuencia PWM (Hz) — 20 kHz evita ruido audible
-constexpr uint8_t PWM_RES = 8;        // Resolución PWM — 8 bits (0-255)
+constexpr uint32_t PWM_FREQ = 20000;           // 20 kHz (por encima del rango audible)
+constexpr uint8_t PWM_RES = 8;                 // 8 bits de resolución (0-255)
 
 // ============================================================
 //  PARÁMETROS DE VELOCIDAD
 // ============================================================
 
-constexpr int PWM_MAX = 182;     // Límite absoluto de PWM para proteger los motores Faulhaber
-constexpr int VEL_AVANCE = 120;  // Potencia de ataque directo a la pelota
-constexpr int VEL_GIRO = 85;     // Potencia de rotación sobre el eje propio
-constexpr int VEL_BUSCAR = 80;   // Potencia durante el patrón de búsqueda
-constexpr int RAMPA_PASO = 4;    // Incremento/decremento de PWM por ciclo de loop (aceleración suave)
-
-constexpr unsigned long T_CONFIRMA_MS = 500;  // Tiempo mínimo de señal continua antes de atacar (ms)
+constexpr int PWM_MAX = 182;                   // Límite máximo de PWM (seguridad)
+constexpr int VEL_AVANCE = 120;                // Velocidad de avance al perseguir o regresar
+constexpr int VEL_GIRO = 85;                   // Velocidad máxima de giro en sitio
+constexpr int VEL_BUSCAR = 80;                 // Velocidad en el patrón de búsqueda
+constexpr int RAMPA_PASO = 4;                  // Incremento/decremento de PWM por ciclo (aceleración suave)
+constexpr unsigned long T_CONFIRMA_MS = 500;   // Tiempo de estabilidad antes de avanzar
 
 // ============================================================
-//  ULTRASONIDOS — Distancia de frenado para remate
+//  ULTRASONIDOS – Distancia de frenado para remate
 // ============================================================
 
-constexpr int DIST_FRENADO_CM = 20;   // Distancia a la portería para ejecutar frenado brusco (cm)
+constexpr int DIST_FRENADO_CM = 20;            // Distancia a la que el robot frena en portería (cm)
+
+// ============================================================
+//  CONTROL DE GIRO EN REGRESANDO (Control PI mejorado)
+// ============================================================
+
+constexpr float K_GIRO = 2.8f;                 // Ganancia proporcional (más agresivo)
+constexpr float K_I_GIRO = 0.15f;              // Ganancia integral (elimina error residual)
+constexpr float SATURACION_I = 30.0f;          // Límite del término integral (evita saturación)
+constexpr int GIRO_MIN_PWM = 15;               // PWM mínimo para vencer la fricción
+constexpr unsigned long T_GIRO_TIMEOUT = 3000; // Tiempo máximo de giro sin progreso (ms)
+
+// ============================================================
+//  NUEVOS: TIMEOUTS PARA DETECTAR ATASCOS EN REGRESANDO
+// ============================================================
+
+constexpr unsigned long T_AVANCE_SIN_PROGRESO = 3000; // Tiempo sin que distFrente disminuya (ms)
+constexpr unsigned long T_YAW_SIN_CAMBIO = 3000;      // Tiempo sin que el Yaw cambie (ms)
 
 // ============================================================
 //  VARIABLES MUTABLES (definidas en config.cpp)
 // ============================================================
 
-extern volatile int velAvanceActual;          // Velocidad actual de la rampa de aceleración
-extern volatile unsigned long tSenalEstable;  // Marca de tiempo desde que la pelota entró al cono frontal
+extern volatile int velAvanceActual;           // Velocidad actual con rampa
+extern volatile unsigned long tSenalEstable;   // Tiempo de señal estable
+extern volatile float Correccion;              // Corrección angular para avanzar
 
 // ============================================================
-//  COMUNICACIÓN UART (Anillo IR → ESP32) - PROTOCOLO BINARIO
+//  COMUNICACIÓN UART (Anillo → Motores) – RX=34, TX=17
 // ============================================================
 
-constexpr uint8_t RX_PIN = 34;  // Pin de recepción (UART2 RX)
-constexpr uint8_t TX_PIN = 17;  // Pin de transmisión (no usado, solo por definición)
+constexpr uint8_t RX_PIN = 34;                 // Pin de recepción UART2 (GPIO34, solo entrada)
+constexpr uint8_t TX_PIN = 17;                 // Pin de transmisión UART2 (GPIO17)
+extern HardwareSerial Enlace;
 
-extern HardwareSerial Enlace;   // Objeto Serial2
+// Variables decodificadas de la trama del anillo
+extern volatile float anguloIR;                // Ángulo de la pelota (grados)
+extern volatile int estadoIR;                  // 1 = pelota detectada, 0 = ausente
+extern volatile int nIR;                       // Número de sensores IR activos
+extern volatile unsigned long ultimoDato;      // Timestamp de la última trama válida (ms)
+extern volatile int distFrente, distAtras, distIzq, distDer; // Distancias ultrasónicas (cm)
 
-// Variables decodificadas de la trama binaria
-extern volatile float anguloIR;            // Ángulo de la pelota (grados)
-extern volatile int estadoIR;              // 1 = pelota detectada, 0 = ausente
-extern volatile int nIR;                   // Número de sensores IR activos (0-16)
-extern volatile unsigned long ultimoDato;  // Tiempo del último paquete válido (ms)
+// Estructura de la trama recibida (debe coincidir con la del anillo)
+struct __attribute__((__packed__)) TramaData {
+  float angulo;
+  uint8_t estado;
+  uint8_t totalActivos;
+  uint16_t distFrente;
+  uint16_t distAtras;
+  uint16_t distIzq;
+  uint16_t distDer;
+  uint16_t bitmapIR;
+  float posX;
+  float posY;
+};
 
 // ============================================================
-//  NAVEGACIÓN — GIROSCOPIO MPU6500
+//  NAVEGACIÓN – GIROSCOPIO MPU6500 (I2C)
 // ============================================================
 
-constexpr uint8_t MPU_ADDR = 0x68;  // Dirección I2C del MPU6500
-
-extern volatile float yaw;            // Rumbo acumulado (grados)
-extern volatile float gyroZoffset;    // Offset del eje Z (calculado en calibrarGyro)
-extern volatile unsigned long tPrev;  // Tiempo del ciclo anterior (microsegundos)
-
-// ============================================================
-//  NAVEGACION — ULTRASONICOS (datos recibidos por UART)
-// ============================================================
-
-extern volatile int distFrente;   // Distancia frontal (cm)
-extern volatile int distAtras;    // Distancia trasera (cm)
-extern volatile int distIzq;      // Distancia izquierda (cm)
-extern volatile int distDer;      // Distancia derecha (cm)
+constexpr uint8_t MPU_ADDR = 0x68;             // Dirección I2C del MPU6500
+extern volatile float yaw;                     // Rumbo acumulado (grados)
+extern volatile float gyroZoffset;             // Offset del giroscopio (LSB)
+extern volatile unsigned long tPrev;           // Tiempo anterior para integración (microsegundos)
 
 // ============================================================
 //  MÁQUINA DE ESTADOS
@@ -125,22 +118,35 @@ extern volatile int distDer;      // Distancia derecha (cm)
 
 enum EstadoRobot {
   ESPERANDO_PELOTA,  // Bloqueo inicial
-  BUSCANDO,          // Búsqueda activa
+  BUSCANDO,          // Patrón de búsqueda
   PERSIGUIENDO,      // Persiguiendo la pelota
-  FRENANDO,          // Frenado tras captura
+  FRENANDO,          // Frenado breve tras captura
   REGRESANDO         // Yendo a portería
 };
 
-// Variables de estado (definidas en config.cpp)
 extern volatile EstadoRobot estadoActual;
+extern volatile unsigned long tFrenoIniciado;   // Momento de inicio del frenado (ms)
+extern volatile unsigned long tUltimaVezPelota; // Última vez que se vio la pelota (ms)
+extern volatile int pasoBusqueda;               // Paso actual del patrón de búsqueda (0-7)
+extern volatile unsigned long tBusqueda;        // Temporizador del paso de búsqueda (ms)
+extern volatile bool pelotaPerdidaReciente;     // Indica que la pelota se acaba de perder
+extern String recepVecinos;                     // String con el estado de los 16 sensores (debug)
 
-extern volatile unsigned long tFrenoIniciado;    // Momento de inicio del frenado (ms)
-extern volatile unsigned long tUltimaVezPelota;  // Última vez que se vio la pelota (ms)
+// ============================================================
+//  LOCALIZACIÓN (recibida por UART, no se usa directamente)
+// ============================================================
 
-extern volatile int pasoBusqueda;            // Paso actual del patrón de búsqueda (0-7)
-extern volatile unsigned long tBusqueda;     // Temporizador del patrón de búsqueda (ms)
-extern volatile bool pelotaPerdidaReciente;  // Bandera de pérdida reciente
+extern volatile float posicionRobotX;
+extern volatile float posicionRobotY;
 
-extern String recepVecinos;   // Cadena con los estados de los 16 sensores (para debug)
+// ============================================================
+//  WiFi / DEBUG REMOTO
+// ============================================================
 
+extern WebServer server;
+extern WiFiClient client;
+constexpr char* ssid = "ESP32_DEBUG_MOTORES";
+constexpr char* password = "12345678";
+constexpr char* ipPC = "192.168.4.2";
+constexpr int puerto = 5000;
 #endif

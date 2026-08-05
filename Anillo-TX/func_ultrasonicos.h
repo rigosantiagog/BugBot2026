@@ -1,13 +1,11 @@
-/**
- * @file func_ultrasonicos.h
- * @brief Declaraciones para la medición con ultrasonidos HC-SR04.
- */
-
 #ifndef FUNC_ULTRASONICOS_H
 #define FUNC_ULTRASONICOS_H
 
-int medirDistancia(int pinTrig, int pinEcho);
-void TareaUltrasonicos(void * pvParameters);
-void iniciarUltrasonicos();   // Lanza la tarea en el Núcleo 0
+#include "config.h"
+
+int medirDistanciaInterrupt(int trig, SensorEcho& sensor); // Mide un sensor HC-SR04 por interrupción (con timeout de 30ms)
+void TareaUltrasonicos(void * pvParameters);                // Tarea FreeRTOS (Core 0): mide los 4 HC-SR04 en bucle continuo
+void iniciarUltrasonicos();                                  // Lanza TareaUltrasonicos en el Core 0
+void inicializarPinesUltrasonidos();                         // Configura pinMode de TRIG/ECHO y crea el semáforo binario
 
 #endif

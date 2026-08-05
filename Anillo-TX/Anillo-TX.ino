@@ -1,96 +1,121 @@
 /**
  * @file Anillo-TX.ino
- * @brief ESP32 del anillo IR: lee 16 sensores TSSP58038, calcula el centroide de la pelota,
- *        mide distancias con 4 ultrasonidos HC-SR04 y envía una trama binaria por UART.
- * 
- * El protocolo de envío es binario con cabecera 0xAA 0x55, 16 bytes de datos y checksum XOR.
+ * @brief ESP32 del anillo: lee 16 sensores IR, ultrasonidos, envía trama binaria.
+ *        Incluye OTA y ajuste de orientación del anillo.
  */
 
-#include <Arduino.h> 
-#include <string.h>
+#include <Arduino.h>
+#include <WiFi.h>
+#include <ArduinoOTA.h>
 #include "config.h"
 #include "func_ultrasonicos.h"
 #include "func_multiplexor.h"
 #include "func_anillo.h"
+#include "func_comunicacion.h"
 
-/**
- * @brief Configuración inicial: UART, pines del multiplexor, lanzamiento de la tarea de ultrasonidos.
- */
-void setup() {
-  Serial.begin(115200);                          // Puerto serie para debug local
-  Enlace.begin(38400, SERIAL_8N1, RX_PIN, TX_PIN); // UART para enviar a la ESP32 de motores
+// Credenciales WiFi (punto de acceso)
+const char* ssid = "ESP32_DEBUG_ANILLO";
+const char* password = "12345678";
 
-  // Configura pines del multiplexor CD74HC4067
-  pinMode(pinS0, OUTPUT); pinMode(pinS1, OUTPUT);
-  pinMode(pinS2, OUTPUT); pinMode(pinS3, OUTPUT);
-  pinMode(pinSIG, INPUT_PULLUP);                 // Señal común (salida del multiplexor)
+WiFiClient client;
+const char* ipPC = "192.168.4.2";
+const int puerto = 5000;
 
-  // Inicia la tarea de lectura de ultrasonidos en el Núcleo 0 (FreeRTOS)
-  iniciarUltrasonicos();
+void wifi_setup() {
+  WiFi.softAP(ssid, password);
+  Serial.print("IP anillo: ");
+  Serial.println(WiFi.softAPIP());
 
-  Serial.println("\n=== ESP32 ANILLO (TX) v11 (Binario) Listo ===");
+  ArduinoOTA.setHostname("BugBot-Anillo");
+  ArduinoOTA.setPassword("12345678");
+  ArduinoOTA.onStart([]() {
+    Serial.println("Iniciando OTA en anillo...");
+  });
+  ArduinoOTA.onEnd([]() {
+    Serial.println("\nOTA anillo finalizada.");
+  });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    Serial.printf("Progreso: %u%%\r", (progress / (total / 100)));
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("Error OTA anillo[%u]\n", error);
+  });
+  ArduinoOTA.begin();
+  Serial.println("OTA listo en el anillo.");
+  Serial.println("\n=== ANILLO v11 (OTA + Estructuras + Offset) Listo ===");
 }
 
-/**
- * @brief Bucle principal: lee sensores, calcula ángulo y distancias, empaqueta y envía.
- */
+void debugLog(const String& texto) {
+  if (client.connected()) client.println(texto);
+}
+
+void setup() {
+  Serial.begin(115200);
+  Enlace.begin(115200, SERIAL_8N1, RX_PIN, TX_PIN);
+
+  pinMode(pinS0, OUTPUT); pinMode(pinS1, OUTPUT);
+  pinMode(pinS2, OUTPUT); pinMode(pinS3, OUTPUT);
+  pinMode(pinSIG, INPUT_PULLUP);
+
+  iniciarUltrasonicos();
+  //wifi_setup();
+
+  // Conexión opcional a servidor de logs (no bloqueante)
+  /*Serial.println("Buscando servidor de logs (opcional)...");
+  while (!client.connect(ipPC, puerto)) {
+    Serial.println("Reintentando servidor logs...");
+  }
+  if (client.connected()) {
+    Serial.println("Conectado a servidor logs.");
+  } else {
+    Serial.println("AVISO: sin servidor de logs. Continuando sin debug remoto.");
+  }*/
+}
+
 void loop() {
-  int totalActivos = 0;                          // Contador de sensores IR activos
+  ArduinoOTA.handle();
 
-  fotorreceptoresActivos(totalActivos);         // Lee los 16 sensores y actualiza activo[]
+  // Leer el anillo de 16 sensores IR
+  int totalActivos = 0;
+  fotorreceptoresActivos(totalActivos);
 
-  int mejorLargo = ubicarPelota();              // Encuentra la cadena más larga de activos
+  // Calcular ángulo de la pelota (cadena más larga)
+  int mejorLargo = ubicarPelota();
+  uint8_t estado = (mejorLargo > 0) ? 1 : 0;
 
-  uint8_t estado = (mejorLargo > 0) ? 1 : 0;    // Estado: 1 si hay pelota, 0 si no
+  // Enviar la trama completa a motores (el ángulo se ajusta con OFFSET_FRENTE)
+  enviarTramaMotores(angulo, estado, totalActivos,
+                     distFrente, distAtras, distIzq, distDer,
+                     robotX, robotY);
 
-  // Construye el mapa de bits de los 16 sensores (bit i = 1 si activo[i] es true)
-  uint16_t bitmapIR = 0;
-  for (int i = 0; i < 16; i++) {
-    if (activo[i]) bitmapIR |= (1 << i);
+  // Recibir la respuesta de motores (yaw)
+  recibirYaw();
+
+  // Debug local
+  Serial.printf("TX -> A:%.1f C:%d N:%d RADAR[F:%d B:%d L:%d R:%d] BMP:0x%04X\n",
+                angulo, estado, totalActivos,
+                distFrente, distAtras, distIzq, distDer,
+                obtenerBitmapIR());
+
+  // Debug remoto (cada 100 ms)
+  static unsigned long tiempo = 0;
+  if (millis() - tiempo > 100) {
+    tiempo = millis();
+    debugLog(
+      "Tiempo: " + String(millis()) + "\n" +
+      "Memoria RAM: " + String(ESP.getFreeHeap()) + "\n" +
+      "Angulo: " + String(angulo) + "\n" +
+      "Estado: " + String(estado) + "\n" +
+      "N Activos: " + String(totalActivos) + "\n" +
+      "DistF: " + String(distFrente) + "\n" +
+      "DistB: " + String(distAtras) +"\n" + 
+      "DistL: " + String(distIzq) + "\n" +
+      "DistR: " + String(distDer) + "\n" +
+      "BitmapIR: " + String(obtenerBitmapIR()) + "\n" +
+      "Coord X: " + String(robotX) + "\n" +
+      "Coord Y: " + String(robotY) + "\n"
+    );
   }
 
-  // --- Empaquetado de la trama binaria (16 bytes de datos) ---
-  uint8_t data[16];
-  int idx = 0;
-
-  // 1. Ángulo (float, 4 bytes, little-endian)
-  memcpy(&data[idx], &angulo, sizeof(float));
-  idx += 4;
-
-  // 2. Estado (uint8_t)
-  data[idx++] = estado;
-
-  // 3. Número de activos (uint8_t)
-  data[idx++] = (uint8_t)totalActivos;
-
-  // 4. Distancias (uint16_t, 2 bytes cada una)
-  uint16_t f = (uint16_t)distFrente;
-  uint16_t b = (uint16_t)distAtras;
-  uint16_t l = (uint16_t)distIzq;
-  uint16_t r = (uint16_t)distDer;
-  memcpy(&data[idx], &f, sizeof(uint16_t)); idx += 2;
-  memcpy(&data[idx], &b, sizeof(uint16_t)); idx += 2;
-  memcpy(&data[idx], &l, sizeof(uint16_t)); idx += 2;
-  memcpy(&data[idx], &r, sizeof(uint16_t)); idx += 2;
-
-  // 5. Mapa de bits de sensores (uint16_t)
-  memcpy(&data[idx], &bitmapIR, sizeof(uint16_t)); idx += 2; // Debe ser 16
-
-  // --- Cálculo del checksum XOR sobre los 16 bytes de datos ---
-  uint8_t checksum = 0;
-  for (int i = 0; i < 16; i++) {
-    checksum ^= data[i];
-  }
-
-  // --- Envío por UART ---
-  Enlace.write(0xAA);        // Cabecera 1
-  Enlace.write(0x55);        // Cabecera 2
-  Enlace.write(data, 16);    // Datos
-  Enlace.write(checksum);    // Checksum
-
-  // Debug local (monitor serie)
-  Serial.printf("TX Bin -> A:%.1f C:%d N:%d RADAR[F:%d B:%d L:%d R:%d] BMP:0x%04X\n",
-                angulo, estado, totalActivos, distFrente, distAtras, distIzq, distDer, bitmapIR);
-
-  delay(50);   // Frecuencia de 20 Hz
+  //delay(10);
 }
