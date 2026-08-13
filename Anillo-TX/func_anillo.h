@@ -2,7 +2,10 @@
 #ifndef FUNC_ANILLO_H
 #define FUNC_ANILLO_H
 
-int ubicarPelota();                              // Encuentra la cadena más larga y calcula el ángulo centroide (actualiza "angulo")
-void fotorreceptoresActivos(int& totalActivos);  // Lee los 16 sensores vía multiplexor y llena activo[16]
+#include <Arduino.h>
+
+int ubicarPelota();                              // Encuentra la cadena más larga y calcula el centroide
+void fotorreceptoresActivos(int& totalActivos);  // Lee todos los sensores
+void imprimirArregloSensores(uint16_t bitmap);   // Imprime el bitmap de 16 sensores como arreglo [0/1] en el Serial
 
 #endif

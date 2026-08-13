@@ -9,8 +9,3 @@ volatile int distDer = 999;
 
 volatile float angulo = -1.0;
 volatile bool activo[16];
-
-// Variables de localización (actualizadas por la tarea de ultrasonidos)
-volatile float yaw = 0.0f;
-volatile float robotX = 0.0f;
-volatile float robotY = 0.0f;

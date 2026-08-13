@@ -1,22 +1,19 @@
 /**
  * @file func_giro.cpp
- * @brief Implementación del giroscopio MPU6500 con calibración robusta sin std::sort.
+ * @brief Implementación de las funciones del giroscopio MPU6500.
  * 
- * La calibración utiliza un método de selección para encontrar la mediana
- * sin necesidad de ordenar todo el arreglo, evitando errores de memoria
- * (Guru Meditation) que ocurrían con std::sort en la ESP32.
+ * Utiliza la librería Wire para comunicación I2C.
+ * Las variables globales gyroZoffset y yaw se definen en config.cpp.
  * 
- * También incluye filtro de promedio móvil y zona muerta para reducir el ruido.
+ * El MPU6500 tiene los mismos registros que el MPU6050:
+ * - WHO_AM_I = 0x70 (MPU6500), 0x68 (MPU6050), 0x71 (MPU9250).
+ * - Registro 0x1B: configuración del giroscopio (0x00 = ±250°/s, factor 131.0).
+ * - Registro 0x6B: gestión de energía (0x00 = despertar).
  */
 
-#include "func_giro.h"       // Declaraciones de funciones
-#include "config.h"          // Definiciones globales (MPU_ADDR, yaw, gyroZoffset, etc.)
-#include <Wire.h>            // Comunicación I2C
-#include <cmath>             // Para fabs()
-
-// ============================================================
-//  FUNCIONES DE ACCESO AL MPU6500 (lectura/escritura de registros)
-// ============================================================
+#include "func_giro.h"
+#include "config.h"
+#include <Wire.h>
 
 /**
  * @brief Escribe un byte en un registro del MPU.
@@ -24,10 +21,10 @@
  * @param v  Valor a escribir.
  */
 void mpuW(uint8_t r, uint8_t v) {
-  Wire.beginTransmission(MPU_ADDR);   // Inicia comunicación con el dispositivo I2C
-  Wire.write(r);                      // Envía la dirección del registro
-  Wire.write(v);                      // Envía el valor a escribir
-  Wire.endTransmission();             // Finaliza la transmisión
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(r);
+  Wire.write(v);
+  Wire.endTransmission();
 }
 
 /**
@@ -36,29 +33,25 @@ void mpuW(uint8_t r, uint8_t v) {
  * @return   Valor leído (0 si falla).
  */
 uint8_t mpuR(uint8_t r) {
-  Wire.beginTransmission(MPU_ADDR);   // Inicia comunicación
-  Wire.write(r);                      // Envía la dirección del registro
-  Wire.endTransmission(false);        // Reinicia pero no detiene (repeated start)
-  Wire.requestFrom(MPU_ADDR, (uint8_t)1); // Solicita 1 byte
-  if (Wire.available()) return Wire.read(); // Devuelve el byte leído
-  return 0;                            // Si no hay datos, retorna 0
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(r);
+  Wire.endTransmission(false);
+  Wire.requestFrom(MPU_ADDR, (uint8_t)1);
+  if (Wire.available()) return Wire.read();
+  return 0;
 }
 
 /**
  * @brief Lee la velocidad angular en el eje Z (2 bytes, little-endian).
- * @return Valor entero de 16 bits (LSB). Se divide por 131.0 para obtener °/s.
+ * @return Valor entero de 16 bits (LSB). Se debe dividir por 131.0 para obtener °/s.
  */
 int16_t mpuGz() {
-  Wire.beginTransmission(MPU_ADDR);   // Inicia comunicación
-  Wire.write(0x47);                   // Registro alto del eje Z (0x47 y 0x48)
-  Wire.endTransmission(false);        // Repeated start
-  Wire.requestFrom(MPU_ADDR, (uint8_t)2); // Solicita 2 bytes
-  return (Wire.read() << 8) | Wire.read(); // Combina los bytes en un entero de 16 bits
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(0x47);                     // Registro alto del eje Z (0x47 y 0x48)
+  Wire.endTransmission(false);
+  Wire.requestFrom(MPU_ADDR, (uint8_t)2);
+  return (Wire.read() << 8) | Wire.read();
 }
-
-// ============================================================
-//  INICIALIZACIÓN DEL MPU
-// ============================================================
 
 /**
  * @brief Inicializa el MPU: configura pines I2C, velocidad, timeout y registros.
@@ -66,9 +59,9 @@ int16_t mpuGz() {
  * @return true si se detecta el dispositivo y se configura correctamente.
  */
 bool mpuInit() {
-  Wire.begin(21, 22);                 // SDA=21, SCL=22 (según conexión)
-  Wire.setClock(400000);              // 400 kHz (Fast Mode)
-  Wire.setTimeout(25);                // Timeout de 25 ms para evitar bloqueos
+  Wire.begin(21, 22);                   // SDA=21, SCL=22 (según conexión)
+  Wire.setClock(400000);                // 400 kHz (Fast Mode)
+  Wire.setTimeout(25);                  // Timeout de 25 ms
 
   // Verificar conexión con el MPU
   Wire.beginTransmission(MPU_ADDR);
@@ -85,7 +78,7 @@ bool mpuInit() {
     // No fallamos, pero avisamos para depuración.
   }
 
-  // Despertar el MPU (salir del modo sleep)
+  // Despertar el MPU (salir del sleep)
   mpuW(0x6B, 0x00);
   delay(100);
 
@@ -101,116 +94,52 @@ bool mpuInit() {
   return true;
 }
 
-// ============================================================
-//  CALIBRACIÓN DEL GIROSCOPIO (SIN std::sort)
-// ============================================================
-
 /**
  * @brief Calibración del giroscopio: toma 1000 lecturas estáticas, calcula el offset.
- *        El offset se guarda en gyroZoffset (en LSB).
- * 
- * Se usa un método de selección para encontrar la mediana sin ordenar todo el arreglo,
- * evitando así errores de memoria (Guru Meditation) que ocurrían con std::sort.
- * Luego se promedian los valores cercanos a la mediana para mayor robustez.
+ *        El offset se guarda en gyroZoffset (en LSB). Se descartan los valores
+ *        extremos para mayor robustez.
  */
 void calibrarGyro() {
-  const int muestras = 1000;           // Número de lecturas (suficiente y rápido)
-  float valores[muestras];             // Arreglo para almacenar las lecturas
-  Serial.print("Calibrando MPU6500 estáticamente (1000 muestras)... ");
+  const int muestras = 1000;
+  long acum = 0;
+  long minimo = 999999, maximo = -999999;
 
-  // Toma 1000 lecturas del eje Z
+  Serial.print("Calibrando... ");
   for (int i = 0; i < muestras; i++) {
-    valores[i] = (float)mpuGz();       // Lee el valor crudo
-    delay(2);                          // Pausa de 2 ms entre lecturas
+    int16_t raw = mpuGz();
+    acum += raw;
+    if (raw < minimo) minimo = raw;
+    if (raw > maximo) maximo = raw;
+    delay(3);
   }
 
-  // ============================================================
-  //  Cálculo de la mediana sin usar std::sort
-  //  Algoritmo de selección O(n^2) pero para n=1000 es aceptable.
-  // ============================================================
-  int mitad = muestras / 2;            // Posición de la mediana (índice 500)
-  float mediana = 0.0f;
-
-  // Para cada elemento, contamos cuántos son menores que él.
-  // El elemento que tenga 'mitad' elementos menores es la mediana.
-  for (int i = 0; i < muestras; i++) {
-    int count = 0;                     // Cuenta de elementos menores que valores[i]
-    for (int j = 0; j < muestras; j++) {
-      if (valores[j] < valores[i]) count++;
-    }
-    // Si el número de menores es <= mitad y además no es demasiado pequeño,
-    // consideramos que este es el valor mediano.
-    // (Esta condición simple funciona porque los valores son únicos o casi únicos)
-    if (count <= mitad && count + (muestras - count) > mitad) {
-      mediana = valores[i];
-      break;
-    }
-  }
-
-  // ============================================================
-  //  Promedio de valores cercanos a la mediana (elimina picos)
-  // ============================================================
-  double suma = 0;
-  int count = 0;
-  // Definimos un margen de ±50 LSB alrededor de la mediana
-  for (int i = 0; i < muestras; i++) {
-    if (fabs(valores[i] - mediana) < 50.0f) {
-      suma += valores[i];
-      count++;
-    }
-  }
-  // Si encontramos suficientes valores, usamos el promedio; si no, usamos la mediana
-  if (count > 0) {
-    gyroZoffset = (float)(suma / count);
-  } else {
-    gyroZoffset = mediana;   // Fallback
-  }
-
-  Serial.printf("Offset Fijo = %.4f LSB\n", gyroZoffset);
+  // Quitamos el 5% de las muestras (los valores extremos) para mayor robustez
+  // Como simplificación, usamos el promedio sin recortar, pero descartamos los extremos
+  long promedio = (acum - minimo - maximo) / (muestras - 2);
+  gyroZoffset = (float)promedio;       // Guardamos el offset en LSB
+  Serial.printf("Offset = %.1f LSB\n", gyroZoffset);
 }
-
-// ============================================================
-//  FILTRO Y ACTUALIZACIÓN DEL RUMBO (YAW)
-// ============================================================
-
-// Variables estáticas para el filtro de promedio móvil (3 muestras)
-static float lecturasAnteriores[3] = {0, 0, 0};
-static int idxLectura = 0;
 
 /**
  * @brief Actualiza el rumbo (yaw) integrando la velocidad angular.
  *        Debe llamarse periódicamente (cada ciclo del loop).
- *        Aplica un filtro de promedio móvil y una zona muerta para reducir el ruido.
+ *        Si el valor de velocidad es muy pequeño (< 0.2 °/s), se ignora para evitar ruido.
  */
 void actualizarRumbo() {
-  unsigned long n = micros();                // Tiempo actual en microsegundos
-  float dt = (n - tPrev) / 1000000.0;        // Diferencia de tiempo en segundos
-  if (dt > 0.05) dt = 0.05;                  // Saturación para evitar saltos bruscos
-  tPrev = n;                                 // Actualiza el tiempo anterior
+  unsigned long n = micros();
+  float dt = (n - tPrev) / 1000000.0;
+  if (dt > 0.05) dt = 0.05;            // Limitar dt para evitar saltos (máximo 50 ms)
+  tPrev = n;
 
-  // Lee el valor crudo del giroscopio (eje Z)
+  // Leer raw y restar offset
   int16_t raw = mpuGz();
-  // Convierte a °/s restando el offset y dividiendo por 131.0
-  float gz = ((float)raw - gyroZoffset) / 131.0f;
+  float gz = (raw - gyroZoffset) / 131.0;   // 131 LSB/(°/s) para ±250°/s
 
-  // Filtro de promedio móvil (últimas 3 lecturas)
-  lecturasAnteriores[idxLectura % 3] = gz;   // Guarda la lectura actual
-  idxLectura++;                               // Incrementa el índice
-  // Calcula el promedio de las 3 lecturas
-  float gzFiltrado = (lecturasAnteriores[0] + lecturasAnteriores[1] + lecturasAnteriores[2]) / 3.0f;
+  // Si el valor es muy pequeño, ignorarlo para evitar ruido
+  if (abs(gz) < 0.2) gz = 0.0;
 
-  // Zona muerta: si la velocidad es menor a 0.2 °/s, se ignora (evita ruido)
-  if (abs(gzFiltrado) < 0.2f) {
-    gzFiltrado = 0.0f;
-  }
-
-  // Integra la velocidad angular para obtener el ángulo (yaw)
-  yaw += gzFiltrado * dt;
+  yaw += gz * dt;
 }
-
-// ============================================================
-//  UTILIDAD: NORMALIZACIÓN DE ÁNGULOS
-// ============================================================
 
 /**
  * @brief Reduce un ángulo al rango [-180, 180] grados para encontrar el camino más corto.
