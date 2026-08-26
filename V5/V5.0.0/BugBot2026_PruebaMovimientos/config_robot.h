@@ -67,7 +67,7 @@
                              // GPIO17 es el TX2 por defecto del ESP32 y estaba libre en este mapa de pines.
                              // IMPORTANTE: falta cablear fisicamente Motores-GPIO17 -> Anillo-GPIO26
                              // (Motores-GPIO16 <- Anillo-GPIO25 deberia ya estar conectado de antes).
-#define BAUD_UART_ANILLO  38400   // Debe coincidir EXACTO con Enlace.begin() del lado del anillo
+#define BAUD_UART_ANILLO  115200   // Debe coincidir EXACTO con Enlace.begin() del lado del anillo
 
 // ============================================================================
 // SECCIÓN 6 — PARÁMETROS PWM  (periférico LEDC del ESP32 core 3.x)
